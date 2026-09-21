@@ -1,7 +1,7 @@
 {
-  "name": "Workouts",
-  "short_name": "Workouts",
-  "description": "3-day upper-body plan with set logging and e1RM progress tracking.",
+  "name": "Alfiery Workouts",
+  "short_name": "Alfiery",
+  "description": "Alfiery's 3-day upper-body plan with set logging and e1RM progress tracking.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

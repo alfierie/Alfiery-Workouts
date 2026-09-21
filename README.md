@@ -1,4 +1,4 @@
-# Workouts
+# Alfiery Workouts
 
 A 3-day upper-body plan, plus two ways to log it that share the same data format.
 
@@ -9,7 +9,7 @@ A 3-day upper-body plan, plus two ways to log it that share the same data format
 | `tracker/track.py` | Terminal tracker — `log`, `progress`, `history`, `summary`, `undo` |
 | `tracker/log.csv` | Terminal data file (plain CSV, git-ignored) |
 | `DEPLOY.md` | How to get the app onto your phone (GitHub Pages, ~5 min) |
-| `tools/make_icons.py` | Regenerates the app icons, no dependencies |
+| `tools/make_icons.py` | Regenerates the app icons (the deadlifting "A" mark), no dependencies |
 
 ## On your phone
 
@@ -70,7 +70,7 @@ whether a lift is actually progressing rather than just fluctuating.
 
 ```bash
 python3 -m http.server 8765 --directory app   # then open http://localhost:8765/
-python3 tools/make_icons.py                   # regenerate icons after editing colours
+python3 tools/make_icons.py                   # regenerate icons after editing the mark
 ```
 
 No build step, no dependencies, no test suite — the app is one self-contained
