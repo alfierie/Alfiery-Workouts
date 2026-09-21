@@ -1,0 +1,16 @@
+# python
+.venv/
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# VS Code Local History — editor scratch copies of every file you edit
+.history/
+
+# Your training log. It is deliberately NOT tracked: if you publish this repo on
+# GitHub Pages with a free account, the repository has to be public — and this
+# file holds your actual numbers. Export from the app to back it up instead.
+# Delete this line if you'd rather version the data (private repo recommended).
+tracker/log.csv

@@ -1,0 +1,1117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Workouts</title>
+<meta name="theme-color" content="#0f1115">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Workouts">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" sizes="180x180" href="./icon-180.png">
+<link rel="icon" href="./icon-192.png">
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #191d24;
+    --card-hi: #212733;
+    --line: #2b3240;
+    --text: #e8ecf3;
+    --dim: #8b95a7;
+    --accent: #a3e635;
+    --accent-dim: #4d6b1a;
+    --danger: #f87171;
+    --up: #4ade80;
+    --down: #f87171;
+    --radius: 14px;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overscroll-behavior-y: none;
+  }
+
+  body {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom));
+  }
+
+  /* ---------- top bar ---------- */
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: rgba(15, 17, 21, .92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
+    padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+  }
+
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .brand { font-size: 17px; font-weight: 700; letter-spacing: -.2px; }
+  .sub { color: var(--dim); font-size: 13px; margin-top: 2px; }
+
+  /* ---------- generic ---------- */
+  main { padding: 14px 16px 20px; }
+  h2 {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .9px;
+    color: var(--dim);
+    margin: 22px 0 8px;
+    font-weight: 600;
+  }
+  h2:first-child { margin-top: 6px; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 13px 14px;
+    margin-bottom: 10px;
+  }
+
+  .exname { font-weight: 600; font-size: 15.5px; }
+  .badge {
+    font-size: 12px;
+    color: var(--dim);
+    background: var(--card-hi);
+    border-radius: 999px;
+    padding: 3px 9px;
+    white-space: nowrap;
+  }
+  .meta { color: var(--dim); font-size: 12.5px; margin-top: 5px; }
+  .meta.done { color: var(--accent); }
+
+  /* ---------- inputs ---------- */
+  .inputs { display: flex; gap: 8px; margin-top: 11px; align-items: flex-end; }
+  .field { flex: 1; position: relative; }
+  .field span { display: block; font-size: 11px; color: var(--dim); margin-bottom: 4px; }
+  .field input {
+    width: 100%;
+    min-width: 0;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    color: var(--text);
+    border-radius: 10px;
+    padding: 11px 8px;
+    font-size: 16px; /* >=16px stops iOS auto-zoom */
+    text-align: center;
+    font-weight: 600;
+  }
+  .field input:focus { outline: 2px solid var(--accent-dim); border-color: var(--accent-dim); }
+
+  /* the kg field carries the +2.5 button, so keep centred text clear of it */
+  .field input[data-f="weight"] { padding-right: 31px; padding-left: 4px; }
+
+  .nudge {
+    position: absolute;
+    right: 3px;
+    bottom: 3px;
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    border: 0;
+    background: var(--card-hi);
+    color: var(--dim);
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .nudge:active { background: var(--line); }
+
+  button { font-family: inherit; }
+
+  .btn {
+    background: var(--card-hi);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    padding: 12px 16px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn:active { transform: scale(.98); }
+
+  .btn.log {
+    background: var(--accent);
+    color: #10160a;
+    border-color: var(--accent);
+    min-width: 68px;
+    height: 46px;
+    padding: 0 14px;
+  }
+  .btn.wide { width: 100%; margin-bottom: 9px; text-align: left; }
+  .btn.danger { color: var(--danger); }
+
+  /* ---------- session switcher ---------- */
+  .seg {
+    display: flex;
+    gap: 4px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 4px;
+    margin-bottom: 4px;
+  }
+  .seg button {
+    flex: 1;
+    background: transparent;
+    border: 0;
+    color: var(--dim);
+    padding: 9px 4px;
+    border-radius: 9px;
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .seg button[aria-selected="true"] { background: var(--accent); color: #10160a; }
+
+  /* ---------- tables ---------- */
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th {
+    text-align: right;
+    color: var(--dim);
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    padding: 0 0 7px;
+  }
+  th:first-child, td:first-child { text-align: left; }
+  td { padding: 9px 0; border-top: 1px solid var(--line); text-align: right; font-variant-numeric: tabular-nums; }
+  td.name { font-weight: 600; }
+  .up { color: var(--up); }
+  .down { color: var(--down); }
+  .flat { color: var(--dim); }
+
+  /* ---------- tab bar ---------- */
+  nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    background: rgba(15, 17, 21, .95);
+    backdrop-filter: blur(12px);
+    border-top: 1px solid var(--line);
+    padding-bottom: env(safe-area-inset-bottom);
+    z-index: 30;
+  }
+  nav button {
+    flex: 1;
+    background: none;
+    border: 0;
+    color: var(--dim);
+    padding: 11px 0 12px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  nav button .ico { display: block; font-size: 19px; margin-bottom: 1px; line-height: 1.1; }
+  nav button[aria-selected="true"] { color: var(--accent); }
+
+  /* ---------- rest timer ---------- */
+  #timer {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: calc(64px + env(safe-area-inset-bottom));
+    background: var(--accent);
+    color: #10160a;
+    border-radius: 12px;
+    padding: 11px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-weight: 700;
+    z-index: 40;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .45);
+  }
+  #timer button {
+    background: rgba(0, 0, 0, .18);
+    color: #10160a;
+    border: 0;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  #timer[hidden] { display: none; }
+
+  .toast {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(76px + env(safe-area-inset-bottom));
+    background: var(--card-hi);
+    border: 1px solid var(--line);
+    color: var(--text);
+    padding: 10px 16px;
+    border-radius: 999px;
+    font-size: 14px;
+    z-index: 50;
+    pointer-events: none;
+    max-width: 92vw;
+    text-align: center;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .toast button {
+    pointer-events: auto;
+    background: rgba(255, 255, 255, .1);
+    border: 0;
+    color: var(--accent);
+    font-family: inherit;
+    font-weight: 700;
+    font-size: 14px;
+    padding: 5px 12px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+
+  .note { color: var(--dim); font-size: 12.5px; line-height: 1.55; }
+  .note strong { color: var(--text); }
+  .empty { color: var(--dim); text-align: center; padding: 34px 10px; font-size: 14px; }
+  .del { background: none; border: 0; color: var(--dim); cursor: pointer; font-size: 16px; padding: 0 0 0 12px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="row">
+    <div>
+      <div class="brand">Workouts</div>
+      <div class="sub" id="sub">—</div>
+    </div>
+    <div class="badge" id="streak">—</div>
+  </div>
+</header>
+
+<main id="view"></main>
+
+<nav id="tabs">
+  <button data-tab="today"    aria-selected="true"><span class="ico">▶</span>Today</button>
+  <button data-tab="progress" aria-selected="false"><span class="ico">▲</span>Progress</button>
+  <button data-tab="history"  aria-selected="false"><span class="ico">≡</span>History</button>
+  <button data-tab="data"     aria-selected="false"><span class="ico">⇅</span>Data</button>
+</nav>
+
+<div id="timer" hidden>
+  <span id="timer-label">Rest</span>
+  <button data-act="timer-stop">Stop</button>
+</div>
+
+<script>
+"use strict";
+
+/* ============================================================ constants */
+
+const STORE_KEY = "workouts.log.v1";
+const REST_PRESETS = [60, 90, 150];
+
+/* Exercise names are stored lowercase and whitespace-collapsed so they line
+   up exactly with what tracker/track.py writes after normalising a name. */
+const PLAN = {
+  push: {
+    label: "Push",
+    title: "Push — Chest / Shoulders / Triceps",
+    days: [1],
+    exercises: [
+      ["barbell bench press", 4, "6–10"],
+      ["incline db press", 3, "8–12"],
+      ["seated db shoulder press", 3, "8–12"],
+      ["lateral raises", 3, "12–15"],
+      ["triceps rope pushdown", 3, "10–15"],
+    ],
+  },
+  pull: {
+    label: "Pull",
+    title: "Pull — Back / Biceps",
+    days: [3],
+    exercises: [
+      ["lat pulldown", 4, "8–12"],
+      ["seated cable row", 4, "8–12"],
+      ["face pulls", 3, "15"],
+      ["db curls", 3, "10–12"],
+      ["hammer curls", 3, "10–12"],
+    ],
+  },
+  upper: {
+    label: "Upper + Arms",
+    title: "Upper Body + Arms",
+    days: [5, 6],
+    exercises: [
+      ["incline db press", 3, "8–12"],
+      ["chest-supported row", 3, "8–12"],
+      ["arnold press", 3, "10"],
+      ["lateral raises", 3, "15"],
+      ["bb curl", 3, "10–12"],
+      ["overhead triceps extension", 3, "10–12"],
+    ],
+  },
+};
+
+const CSV_HEADER = ["date", "exercise", "weight_kg", "reps", "sets", "notes"];
+
+/* ============================================================ helpers */
+
+const $ = (sel) => document.querySelector(sel);
+
+const esc = (s) =>
+  String(s ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+  );
+
+/** Same normalisation track.py applies: lowercase, collapse whitespace. */
+const norm = (name) => String(name).toLowerCase().trim().split(/\s+/).join(" ");
+
+const e1rm = (weight, reps) => weight * (1 + reps / 30);
+
+/** 175.0 -> "175", 72.5 -> "72.5" — mirrors track.py's fmt(). */
+function fmt(n, decimals = 1) {
+  const r = Number(Number(n).toFixed(decimals));
+  return Number.isInteger(r) ? String(r) : r.toFixed(decimals);
+}
+
+const todayISO = () => new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD, local
+
+function daysBetween(iso) {
+  const then = new Date(iso + "T00:00:00");
+  const now = new Date(todayISO() + "T00:00:00");
+  return Math.round((now - then) / 86400000);
+}
+
+function agoLabel(iso) {
+  const d = daysBetween(iso);
+  if (d === 0) return "today";
+  if (d === 1) return "yesterday";
+  if (d < 7) return `${d} days ago`;
+  if (d < 14) return "last week";
+  return `${Math.floor(d / 7)} weeks ago`;
+}
+
+function titleCase(s) {
+  return s
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .replace(/\bDb\b/g, "DB")
+    .replace(/\bBb\b/g, "BB");
+}
+
+/* ============================================================ storage */
+
+function loadLog() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(STORE_KEY));
+    return Array.isArray(raw) ? raw : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLog(rows) {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(rows));
+    return true;
+  } catch {
+    toast("Storage full — export and trim your log");
+    return false;
+  }
+}
+
+/** Entry with the highest estimated 1RM for one exercise, optionally on a date. */
+function bestOf(rows, exercise, date) {
+  let best = null;
+  for (const r of rows) {
+    if (exercise && r.exercise !== exercise) continue;
+    if (date && r.date !== date) continue;
+    if (!best || e1rm(r.weight, r.reps) > e1rm(best.weight, best.reps)) best = r;
+  }
+  return best;
+}
+
+function lastFor(rows, exercise) {
+  let last = null;
+  for (const r of rows) {
+    if (r.exercise !== exercise) continue;
+    if (!last || r.date > last.date) last = r;
+  }
+  return last;
+}
+
+/** Mirrors tracker/track.py's `progress` command: best e1RM, best set, last, trend. */
+function progressRows(rows) {
+  const byEx = new Map();
+  for (const r of rows) {
+    if (!byEx.has(r.exercise)) byEx.set(r.exercise, []);
+    byEx.get(r.exercise).push(r);
+  }
+
+  const out = [];
+  for (const [exercise, entries] of byEx) {
+    const byDay = new Map();
+    for (const r of entries) {
+      const cur = byDay.get(r.date);
+      if (!cur || e1rm(r.weight, r.reps) > e1rm(cur.weight, cur.reps)) byDay.set(r.date, r);
+    }
+
+    const days = [...byDay.keys()].sort();
+    const lastDay = days[days.length - 1];
+    const lastE1rm = e1rm(byDay.get(lastDay).weight, byDay.get(lastDay).reps);
+    const earlier = days.slice(0, -1).map((d) => e1rm(byDay.get(d).weight, byDay.get(d).reps));
+
+    let trend = "—";
+    let cls = "flat";
+    if (earlier.length) {
+      const hi = Math.max(...earlier);
+      if (lastE1rm > hi + 0.05) { trend = "↑"; cls = "up"; }
+      else if (lastE1rm < hi - 0.05) { trend = "↓"; cls = "down"; }
+      else { trend = "→"; cls = "flat"; }
+    }
+
+    out.push({
+      exercise,
+      logs: entries.length,
+      bestE1rm: Math.max(...entries.map((r) => e1rm(r.weight, r.reps))),
+      best: bestOf(entries, exercise),
+      lastDay,
+      trend,
+      cls,
+    });
+  }
+  return out.sort((a, b) => a.exercise.localeCompare(b.exercise));
+}
+
+/* ============================================================ csv */
+
+function toCSV(rows) {
+  const cell = (v) => {
+    const s = v == null ? "" : String(v);
+    return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const lines = [CSV_HEADER.join(",")];
+  const sorted = [...rows].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  for (const r of sorted) {
+    lines.push([r.date, r.exercise, fmt(r.weight), r.reps, r.sets, r.notes || ""].map(cell).join(","));
+  }
+  return lines.join("\n") + "\n";
+}
+
+function parseCSV(text) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let quoted = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quoted) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else quoted = false;
+      } else field += c;
+    } else if (c === '"') quoted = true;
+    else if (c === ",") { row.push(field); field = ""; }
+    else if (c === "\n") { row.push(field); rows.push(row); row = []; field = ""; }
+    else if (c !== "\r") field += c;
+  }
+  if (field !== "" || row.length) { row.push(field); rows.push(row); }
+  return rows.filter((r) => r.some((c) => c.trim() !== ""));
+}
+
+/** Returns {rows, skipped} — tolerant of column order and of hand-edited files. */
+function rowsFromCSV(text) {
+  const table = parseCSV(text);
+  if (!table.length) return { rows: [], skipped: 0 };
+
+  const header = table[0].map((h) => h.trim().toLowerCase());
+  const idx = (name) => header.indexOf(name);
+  const dateI = idx("date");
+  const exI = idx("exercise");
+  const wI = idx("weight_kg");
+  const rI = idx("reps");
+  const sI = idx("sets");
+  const nI = idx("notes");
+
+  if ([dateI, exI, wI, rI, sI].some((i) => i < 0)) {
+    return { rows: [], skipped: 0, badHeader: true };
+  }
+
+  const rows = [];
+  let skipped = 0;
+  for (const cells of table.slice(1)) {
+    const weight = parseFloat(cells[wI]);
+    const reps = parseInt(cells[rI], 10);
+    const sets = parseInt(cells[sI], 10);
+    const date = (cells[dateI] || "").trim();
+    const exercise = (cells[exI] || "").trim();
+
+    if (!exercise || !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+        !Number.isFinite(weight) || weight < 0 || !(reps > 0) || !(sets > 0)) {
+      skipped++;
+      continue;
+    }
+    rows.push({
+      date,
+      exercise: norm(exercise),
+      weight,
+      reps,
+      sets,
+      notes: nI >= 0 ? (cells[nI] || "").trim() : "",
+    });
+  }
+  return { rows, skipped };
+}
+
+/* ============================================================ ui bits */
+
+let toastTimer = null;
+
+/** Transient message at the bottom of the screen. `action` = {label, fn}. */
+function toast(msg, action) {
+  document.querySelectorAll(".toast").forEach((n) => n.remove());
+
+  const el = document.createElement("div");
+  el.className = "toast";
+
+  const text = document.createElement("span");
+  text.textContent = msg;
+  el.appendChild(text);
+
+  if (action) {
+    const btn = document.createElement("button");
+    btn.textContent = action.label;
+    btn.addEventListener("click", () => {
+      el.remove();
+      clearTimeout(toastTimer);
+      action.fn();
+    });
+    el.appendChild(btn);
+  }
+
+  document.body.appendChild(el);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.remove(), action ? 5000 : 2200);
+}
+
+function confirmAction(msg) {
+  return window.confirm(msg);
+}
+
+/* ============================================================ rest timer */
+
+let timerHandle = null;
+let timerEnd = 0;
+let restSeconds = 90;
+
+function startRest(seconds) {
+  restSeconds = seconds;
+  timerEnd = Date.now() + seconds * 1000;
+  $("#timer").hidden = false;
+  tickRest();
+  clearInterval(timerHandle);
+  timerHandle = setInterval(tickRest, 250);
+}
+
+function tickRest() {
+  const left = Math.max(0, Math.ceil((timerEnd - Date.now()) / 1000));
+  const m = Math.floor(left / 60);
+  const s = String(left % 60).padStart(2, "0");
+  $("#timer-label").textContent = `Rest — ${m}:${s}`;
+  if (left === 0) stopRest(true);
+}
+
+function stopRest(finished = false) {
+  clearInterval(timerHandle);
+  timerHandle = null;
+  $("#timer").hidden = true;
+  if (finished) {
+    if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
+    beep();
+    toast("Rest done");
+  }
+}
+
+let audioCtx = null;
+function beep() {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.25, audioCtx.currentTime + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.6);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.62);
+  } catch { /* audio is a nicety, never a failure */ }
+}
+
+/* ============================================================ state */
+
+const state = {
+  tab: "today",
+  session: null,
+  rows: loadLog(),
+};
+
+function guessSession() {
+  const dow = new Date().getDay(); // 1 = Mon … 6 = Sat
+  for (const [key, cfg] of Object.entries(PLAN)) if (cfg.days.includes(dow)) return key;
+  return "push"; // rest day: nudge back to the start of the week
+}
+
+function sessionDoneCount(key, date) {
+  const names = new Set(PLAN[key].exercises.map(([n]) => n));
+  return state.rows.filter((r) => r.date === date && names.has(r.exercise)).length;
+}
+
+/* ============================================================ views */
+
+function render() {
+  const view = $("#view");
+  for (const btn of document.querySelectorAll("#tabs button")) {
+    btn.setAttribute("aria-selected", String(btn.dataset.tab === state.tab));
+  }
+
+  const log = state.rows;
+  const sessionsLogged = new Set(log.map((r) => r.date)).size;
+  $("#sub").textContent = log.length
+    ? `${log.length} ${log.length === 1 ? "entry" : "entries"} · ${sessionsLogged} ${sessionsLogged === 1 ? "session" : "sessions"}`
+    : "No entries yet";
+
+  const weekAgo = new Date(Date.now() - 7 * 86400000).toLocaleDateString("en-CA");
+  const thisWeek = new Set(log.filter((r) => r.date >= weekAgo).map((r) => r.date)).size;
+  const chip = $("#streak");
+  chip.textContent = thisWeek ? `${thisWeek}/3 this week` : "0/3 this week";
+  chip.style.color = thisWeek >= 3 ? "var(--accent)" : "var(--dim)";
+
+  if (state.tab === "today") renderToday(view);
+  else if (state.tab === "progress") renderProgress(view);
+  else if (state.tab === "history") renderHistory(view);
+  else renderData(view);
+
+  window.scrollTo({ top: 0 });
+}
+
+/* ---------- today ---------- */
+
+function renderToday(view) {
+  const key = state.session || guessSession();
+  state.session = key;
+  const cfg = PLAN[key];
+  const today = todayISO();
+  const done = sessionDoneCount(key, today);
+
+  const seg = Object.entries(PLAN)
+    .map(([k, c]) => `<button data-act="session" data-key="${k}" aria-selected="${k === key}">${esc(c.label)}</button>`)
+    .join("");
+
+  const cards = cfg.exercises.map(([name, sets, reps]) => {
+    const last = lastFor(state.rows, name);
+    const todayBest = bestOf(state.rows, name, today);
+
+    let meta = '<div class="meta">No history — start light and leave 2 reps in the tank</div>';
+    if (last) {
+      meta = `<div class="meta">Last: ${fmt(last.weight)} kg × ${last.reps} × ${last.sets} · ${agoLabel(last.date)}</div>`;
+    }
+    if (todayBest) {
+      meta += `<div class="meta done">✓ Logged today: ${fmt(todayBest.weight)} kg × ${todayBest.reps} × ${todayBest.sets}</div>`;
+    }
+
+    const w = last ? fmt(last.weight) : "";
+    const r = last ? last.reps : "";
+    const s = last ? last.sets : sets;
+
+    return `
+      <div class="card" data-ex="${esc(name)}">
+        <div class="row">
+          <span class="exname">${esc(titleCase(name))}</span>
+          <span class="badge">${sets} × ${esc(reps)}</span>
+        </div>
+        ${meta}
+        <div class="inputs">
+          <div class="field">
+            <span>kg</span>
+            <input type="text" inputmode="decimal" enterkeyhint="next" data-f="weight" value="${w}" placeholder="—">
+            <button class="nudge" data-act="bump" data-delta="2.5" title="+2.5 kg">+</button>
+          </div>
+          <div class="field">
+            <span>reps</span>
+            <input type="text" inputmode="numeric" enterkeyhint="next" data-f="reps" value="${r}" placeholder="—">
+          </div>
+          <div class="field">
+            <span>sets</span>
+            <input type="text" inputmode="numeric" enterkeyhint="done" data-f="sets" value="${s}" placeholder="—">
+          </div>
+          <button class="btn log" data-act="log">Log</button>
+        </div>
+      </div>`;
+  }).join("");
+
+  const restBtns = REST_PRESETS
+    .map((sec) => `<button class="btn" data-act="rest" data-sec="${sec}">${sec < 60 ? sec + "s" : Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0")}</button>`)
+    .join("");
+
+  view.innerHTML = `
+    <div class="seg">${seg}</div>
+    <h2>${esc(cfg.title)} · ${done}/${cfg.exercises.length} done</h2>
+    ${cards}
+    <h2>Rest timer</h2>
+    <div class="card">
+      <div class="inputs" style="margin-top:0">${restBtns}</div>
+      <div class="note" style="margin-top:10px">2–3 min after the big lifts, 60–90 s for isolation.</div>
+    </div>
+    <div class="note" style="margin-top:16px">
+      <strong>Progression:</strong> hit the top of the rep range on every set, then add 2.5 kg and drop
+      back to the bottom. Stop 1–2 reps shy of failure. The <em>+</em> button adds 2.5 kg to the weight box.
+    </div>`;
+}
+
+/* ---------- progress ---------- */
+
+function renderProgress(view) {
+  if (!state.rows.length) {
+    view.innerHTML = `<div class="empty">Nothing logged yet.<br>Add your first set on the Today tab.</div>`;
+    return;
+  }
+
+  const rows = progressRows(state.rows);
+  const body = rows.map((r) => `
+    <tr>
+      <td class="name">${esc(titleCase(r.exercise))}</td>
+      <td>${fmt(r.bestE1rm)}</td>
+      <td>${fmt(r.best.weight)}×${r.best.reps}</td>
+      <td>${esc(agoLabel(r.lastDay))}</td>
+      <td class="${r.cls}">${r.trend}</td>
+    </tr>`).join("");
+
+  const first = state.rows.reduce((a, b) => (a.date <= b.date ? a : b));
+  const totalVolume = state.rows.reduce((sum, r) => sum + r.weight * r.reps * r.sets, 0);
+
+  view.innerHTML = `
+    <h2>Estimated 1RM per lift</h2>
+    <div class="card" style="padding:12px 14px 4px">
+      <table>
+        <thead><tr><th>Lift</th><th>e1RM</th><th>Best set</th><th>Last</th><th>Trend</th></tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>
+    <div class="note" style="margin-top:4px">
+      1RM is estimated with Epley: <strong>weight × (1 + reps ÷ 30)</strong>, so a heavy triple and a
+      light set of 12 are comparable. Same maths as <strong>track.py</strong>, so numbers agree.
+    </div>
+    <h2>Totals</h2>
+    <div class="card">
+      <div class="row"><span class="note">Total volume moved</span><span class="exname">${fmt(totalVolume, 0)} kg</span></div>
+      <div class="row" style="margin-top:9px"><span class="note">Sessions logged</span><span class="exname">${new Set(state.rows.map((r) => r.date)).size}</span></div>
+      <div class="row" style="margin-top:9px"><span class="note">Tracking since</span><span class="exname">${esc(first.date)}</span></div>
+    </div>`;
+}
+
+/* ---------- history ---------- */
+
+function renderHistory(view) {
+  if (!state.rows.length) {
+    view.innerHTML = `<div class="empty">Nothing logged yet.</div>`;
+    return;
+  }
+
+  const byDate = new Map();
+  for (const r of state.rows) {
+    if (!byDate.has(r.date)) byDate.set(r.date, []);
+    byDate.get(r.date).push(r);
+  }
+  const days = [...byDate.keys()].sort().reverse();
+
+  view.innerHTML = days.map((date) => {
+    const entries = byDate.get(date);
+    const volume = entries.reduce((sum, r) => sum + r.weight * r.reps * r.sets, 0);
+    const items = entries.map((r, i) => `
+      <tr>
+        <td class="name">${esc(titleCase(r.exercise))}</td>
+        <td>${fmt(r.weight)} × ${r.reps} × ${r.sets}</td>
+        <td style="width:34px"><button class="del" data-act="del" data-date="${esc(date)}" data-i="${i}" aria-label="Delete">✕</button></td>
+      </tr>`).join("");
+
+    return `
+      <h2>${esc(date)} · ${esc(agoLabel(date))}</h2>
+      <div class="card" style="padding:12px 14px 4px">
+        <table><tbody>${items}</tbody></table>
+        <div class="note" style="padding:8px 0 6px">${entries.length} ${entries.length === 1 ? "lift" : "lifts"} · ${fmt(volume, 0)} kg moved</div>
+      </div>`;
+  }).join("");
+}
+
+/* ---------- data ---------- */
+
+function renderData(view) {
+  const count = state.rows.length;
+  view.innerHTML = `
+    <h2>Your data</h2>
+    <div class="card">
+      <div class="row"><span class="note">Entries stored on this device</span><span class="exname">${count}</span></div>
+      <div class="note" style="margin-top:10px">
+        Kept in this browser's local storage. It survives closing the app, but
+        <strong>clearing Safari/Chrome site data wipes it</strong> — export to CSV every week or two.
+      </div>
+    </div>
+
+    <h2>Export / import</h2>
+    <button class="btn wide" data-act="export">⬇︎ Download CSV (for track.py)</button>
+    <button class="btn wide" data-act="copy">⧉ Copy CSV to clipboard</button>
+    <button class="btn wide" data-act="import">⬆︎ Import CSV (merges, skips duplicates)</button>
+    <input type="file" id="file" accept=".csv,text/csv" hidden>
+    <div class="note" style="margin-top:4px">
+      The CSV uses the exact same columns as <strong>track.py</strong>:<br>
+      <code>${CSV_HEADER.join(",")}</code><br>
+      Drop it into <code>tracker/</code> and the terminal commands keep working.
+    </div>
+
+    <h2>Danger zone</h2>
+    <button class="btn wide danger" data-act="clear">Delete all entries on this device</button>
+  `;
+}
+
+/* ============================================================ actions */
+
+function logFrom(card) {
+  const exercise = card.dataset.ex;
+  const val = (f) => card.querySelector(`[data-f="${f}"]`).value.trim().replace(",", ".");
+
+  const weight = parseFloat(val("weight"));
+  const reps = parseInt(val("reps"), 10);
+  const sets = parseInt(val("sets"), 10) || 3;
+
+  if (!Number.isFinite(weight) || weight < 0) { toast("Enter a weight in kg"); return; }
+  if (!(reps > 0)) { toast("Enter reps"); return; }
+  if (!(sets > 0)) { toast("Enter sets"); return; }
+
+  const entry = { date: todayISO(), exercise, weight, reps, sets, notes: "" };
+
+  // Sets are logged as a count, so an identical entry on the same day is far
+  // more likely a double-tap than a genuine second set. Confirm before adding.
+  const twin = state.rows.find(
+    (r) =>
+      r.date === entry.date &&
+      r.exercise === entry.exercise &&
+      r.weight === entry.weight &&
+      r.reps === entry.reps &&
+      r.sets === entry.sets
+  );
+  if (twin &&
+      !confirmAction(
+        `Already logged ${titleCase(exercise)} ${fmt(weight)} kg × ${reps} × ${sets} today.\n\nAdd it again?`
+      )) {
+    return;
+  }
+
+  const previousBest = bestOf(state.rows, exercise);
+
+  state.rows.push(entry);
+  if (!saveLog(state.rows)) return;
+
+  const label = `${fmt(weight)} kg × ${reps} × ${sets}`;
+  let message;
+  if (previousBest && e1rm(weight, reps) > e1rm(previousBest.weight, previousBest.reps) + 0.05) {
+    const gain = e1rm(weight, reps) - e1rm(previousBest.weight, previousBest.reps);
+    message = `New best ${titleCase(exercise)} — e1RM +${fmt(gain)}`;
+  } else {
+    message = `Logged ${titleCase(exercise)} ${label}`;
+  }
+
+  toast(message, {
+    label: "Undo",
+    fn: () => {
+      const at = state.rows.indexOf(entry);
+      if (at < 0) return;
+      state.rows.splice(at, 1);
+      saveLog(state.rows);
+      render();
+      toast("Entry removed");
+    },
+  });
+
+  if (!timerHandle) startRest(restSeconds);
+  render();
+}
+
+function handleAction(act, el) {
+  const card = el.closest("[data-ex]");
+
+  switch (act) {
+    case "session":
+      state.session = el.dataset.key;
+      render();
+      break;
+
+    case "bump": {
+      const input = card.querySelector('[data-f="weight"]');
+      const base = parseFloat(input.value.replace(",", "."));
+      input.value = fmt((Number.isFinite(base) ? base : 0) + parseFloat(el.dataset.delta));
+      break;
+    }
+
+    case "log":
+      logFrom(card);
+      break;
+
+    case "rest":
+      startRest(parseInt(el.dataset.sec, 10));
+      break;
+
+    case "timer-stop":
+      stopRest();
+      break;
+
+    case "del": {
+      // History rows are re-derived from state, so translate (date, offset) back
+      // into an index in the flat array before splicing.
+      const date = el.dataset.date;
+      const offset = parseInt(el.dataset.i, 10);
+      const indices = state.rows.map((r, i) => (r.date === date ? i : -1)).filter((i) => i >= 0);
+      const target = indices[offset];
+      if (target == null) return;
+      const removed = state.rows[target];
+      if (!confirmAction(`Delete ${titleCase(removed.exercise)} ${fmt(removed.weight)} kg × ${removed.reps} × ${removed.sets}?`)) return;
+      state.rows.splice(target, 1);
+      saveLog(state.rows);
+      toast("Deleted");
+      render();
+      break;
+    }
+
+    case "export": {
+      if (!state.rows.length) { toast("Nothing to export"); return; }
+      const blob = new Blob([toCSV(state.rows)], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `workouts-${todayISO()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast("CSV downloaded");
+      break;
+    }
+
+    case "copy": {
+      if (!state.rows.length) { toast("Nothing to copy"); return; }
+      const text = toCSV(state.rows);
+      const done = () => toast("CSV copied");
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(done, () => toast("Copy blocked by browser"));
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand("copy"); done(); } catch { toast("Copy not supported"); }
+        ta.remove();
+      }
+      break;
+    }
+
+    case "import":
+      $("#file").click();
+      break;
+
+    case "clear":
+      if (!state.rows.length) { toast("Nothing to delete"); return; }
+      if (!confirmAction(`Delete all ${state.rows.length} entries on this device? Export first if you haven't.`)) return;
+      state.rows = [];
+      saveLog(state.rows);
+      toast("All entries deleted");
+      render();
+      break;
+  }
+}
+
+/* ============================================================ csv import */
+
+async function importFile(file) {
+  const text = await file.text();
+  const { rows, skipped, badHeader } = rowsFromCSV(text);
+
+  if (badHeader) { toast("CSV needs the track.py columns"); return; }
+  if (!rows.length) { toast("No valid rows found"); return; }
+
+  const key = (r) => `${r.date}|${r.exercise}|${r.weight}|${r.reps}|${r.sets}|${r.notes}`;
+  const seen = new Set(state.rows.map(key));
+  const fresh = rows.filter((r) => !seen.has(key(r)));
+
+  state.rows = state.rows.concat(fresh);
+  saveLog(state.rows);
+
+  const parts = [`Imported ${fresh.length} new`];
+  if (rows.length - fresh.length) parts.push(`${rows.length - fresh.length} duplicates skipped`);
+  if (skipped) parts.push(`${skipped} malformed skipped`);
+  toast(parts.join(" · "));
+  render();
+}
+
+/* ============================================================ wire up */
+
+$("#tabs").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-tab]");
+  if (!btn) return;
+  state.tab = btn.dataset.tab;
+  render();
+});
+
+$("#view").addEventListener("click", (e) => {
+  const el = e.target.closest("[data-act]");
+  if (!el) return;
+  handleAction(el.dataset.act, el);
+});
+
+$("#view").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  const input = e.target.closest("input[data-f]");
+  if (!input) return;
+  const card = input.closest("[data-ex]");
+  const fields = [...card.querySelectorAll("input[data-f]")];
+  const next = fields[fields.indexOf(input) + 1];
+  if (next) { next.focus(); next.select(); } else { input.blur(); logFrom(card); }
+});
+
+$("#timer").addEventListener("click", (e) => {
+  const el = e.target.closest("[data-act]");
+  if (el) handleAction(el.dataset.act, el);
+});
+
+document.addEventListener("change", (e) => {
+  if (e.target.id === "file" && e.target.files && e.target.files[0]) {
+    importFile(e.target.files[0]).finally(() => { e.target.value = ""; });
+  }
+});
+
+/* Full-screen inputs on the last field make the keyboard cover the tab bar. */
+window.addEventListener("focusin", (e) => {
+  if (e.target.matches("input[data-f]")) $("#timer").style.bottom = "calc(64px + env(safe-area-inset-bottom))";
+});
+window.addEventListener("focusout", (e) => {
+  if (e.target.matches("input[data-f]")) $("#timer").style.bottom = "";
+});
+
+if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => { /* offline is a bonus, not a requirement */ });
+  });
+}
+
+render();
+</script>
+</body>
+</html>
