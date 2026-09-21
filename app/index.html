@@ -282,6 +282,28 @@
   .note strong { color: var(--text); }
   .empty { color: var(--dim); text-align: center; padding: 34px 10px; font-size: 14px; }
   .del { background: none; border: 0; color: var(--dim); cursor: pointer; font-size: 16px; padding: 0 0 0 12px; }
+
+  /* free-text fields (Supabase URL / key / email) read left-aligned, unlike the
+     centred numeric set inputs */
+  .field.text input {
+    text-align: left;
+    font-weight: 400;
+    font-size: 15px;
+    padding: 11px 10px;
+  }
+  .field.text { margin-top: 10px; }
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--dim);
+    flex: none;
+  }
+  .dot.ok { background: var(--up); }
+  .dot.pending { background: #fbbf24; }
+  .dot.warn { background: var(--danger); }
+  .dot.off { display: none; }
 </style>
 </head>
 <body>
@@ -292,7 +314,10 @@
       <div class="brand">Alfiery Workouts</div>
       <div class="sub" id="sub">—</div>
     </div>
-    <div class="badge" id="streak">—</div>
+    <div style="display:flex;align-items:center;gap:9px">
+      <span class="dot off" id="syncdot" title=""></span>
+      <div class="badge" id="streak">—</div>
+    </div>
   </div>
 </header>
 
@@ -310,6 +335,8 @@
   <button data-act="timer-stop">Stop</button>
 </div>
 
+<script src="./vendor/supabase.js"></script>
+<script src="./sync.js"></script>
 <script>
 "use strict";
 
@@ -384,6 +411,43 @@ function fmt(n, decimals = 1) {
 
 const todayISO = () => new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD, local
 
+/** crypto.randomUUID needs a secure context, which plain-http LAN testing is not. */
+function uuid() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(bytes);
+  else for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/** Everything the user should see: tombstones stay in storage, hidden from views. */
+const liveRows = () => state.rows.filter((r) => !r.deleted);
+
+/** Deleting means flagging, so the deletion can travel to your other devices. */
+function tombstone(row) {
+  row.deleted = true;
+  row.updatedAt = new Date().toISOString();
+}
+
+/** Rows written before syncing existed have no id or version — backfill both. */
+function migrate(row) {
+  const stamp = Date.parse(`${row.date}T12:00:00`);
+  return {
+    id: row.id || uuid(),
+    date: row.date,
+    exercise: norm(row.exercise || ""),
+    weight: Number(row.weight),
+    reps: Number(row.reps),
+    sets: Number(row.sets),
+    notes: row.notes || "",
+    deleted: Boolean(row.deleted),
+    updatedAt: row.updatedAt || new Date(Number.isFinite(stamp) ? stamp : Date.now()).toISOString(),
+  };
+}
+
 function daysBetween(iso) {
   const then = new Date(iso + "T00:00:00");
   const now = new Date(todayISO() + "T00:00:00");
@@ -409,12 +473,20 @@ function titleCase(s) {
 /* ============================================================ storage */
 
 function loadLog() {
+  let raw;
   try {
-    const raw = JSON.parse(localStorage.getItem(STORE_KEY));
-    return Array.isArray(raw) ? raw : [];
+    raw = JSON.parse(localStorage.getItem(STORE_KEY));
   } catch {
     return [];
   }
+  if (!Array.isArray(raw)) return [];
+
+  const rows = raw.filter((r) => r && r.date).map(migrate);
+
+  // Persist the backfill once. Without this the ids are regenerated on every
+  // load, and the next sync would upload duplicates and orphan the originals.
+  if (!raw.every((r) => r && r.id && r.updatedAt)) saveLog(rows);
+  return rows;
 }
 
 function saveLog(rows) {
@@ -498,7 +570,8 @@ function toCSV(rows) {
     return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   };
   const lines = [CSV_HEADER.join(",")];
-  const sorted = [...rows].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  // Tombstones are an implementation detail of syncing — never exported.
+  const sorted = rows.filter((r) => !r.deleted).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   for (const r of sorted) {
     lines.push([r.date, r.exercise, fmt(r.weight), r.reps, r.sets, r.notes || ""].map(cell).join(","));
   }
@@ -665,6 +738,82 @@ const state = {
   rows: loadLog(),
 };
 
+/* ============================================================ sync */
+
+let syncTimer = null;
+let syncing = false;
+let lastUser = null;
+
+/** Debounced so a burst of logging doesn't become a burst of API calls. */
+function scheduleSync(delay = 2000) {
+  if (!Sync.state.configured || !Sync.state.signedIn) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => { runSync(false); }, delay);
+}
+
+async function runSync(announce) {
+  if (!Sync.state.signedIn) {
+    if (announce) toast("Not signed in");
+    return;
+  }
+  if (syncing) {
+    // supabase-js retries transient failures, so a dead network can hold this
+    // open for a few seconds. Don't queue up behind it.
+    if (announce) toast("Already syncing…");
+    return;
+  }
+
+  syncing = true;
+  try {
+    const result = await Sync.sync(state.rows);
+    state.rows = result.rows;
+    saveLog(state.rows);
+    render();
+    if (announce) toast(`Synced — ${result.total} entries`);
+  } catch {
+    render();
+    if (announce) toast("Sync failed — " + (Sync.state.error || "unknown error"));
+  } finally {
+    syncing = false;
+  }
+}
+
+function renderSyncDot() {
+  const dot = $("#syncdot");
+  const st = Sync.state;
+  if (!st.configured || !st.signedIn) {
+    dot.className = "dot off";
+    dot.title = "";
+  } else if (st.error) {
+    dot.className = "dot warn";
+    dot.title = "Sync error: " + st.error;
+  } else if (st.pending) {
+    dot.className = "dot pending";
+    dot.title = "Changes waiting to sync";
+  } else {
+    dot.className = "dot ok";
+    dot.title = "Synced";
+  }
+}
+
+Sync.onChange(() => {
+  renderSyncDot();
+  if (state.tab === "data") render();
+
+  // Only react to the signed-in identity changing. Reacting to every event
+  // would loop: sync emits, which schedules a sync, which emits...
+  const who = Sync.state.signedIn ? Sync.state.email : null;
+  if (who !== lastUser) {
+    lastUser = who;
+    if (who) scheduleSync(600);
+  }
+});
+
+window.addEventListener("online", () => scheduleSync(500));
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") scheduleSync(1500);
+});
+
 function guessSession() {
   const dow = new Date().getDay(); // 1 = Mon … 6 = Sat
   for (const [key, cfg] of Object.entries(PLAN)) if (cfg.days.includes(dow)) return key;
@@ -684,7 +833,7 @@ function render() {
     btn.setAttribute("aria-selected", String(btn.dataset.tab === state.tab));
   }
 
-  const log = state.rows;
+  const log = liveRows();
   const sessionsLogged = new Set(log.map((r) => r.date)).size;
   $("#sub").textContent = log.length
     ? `${log.length} ${log.length === 1 ? "entry" : "entries"} · ${sessionsLogged} ${sessionsLogged === 1 ? "session" : "sessions"}`
@@ -695,6 +844,8 @@ function render() {
   const chip = $("#streak");
   chip.textContent = thisWeek ? `${thisWeek}/3 this week` : "0/3 this week";
   chip.style.color = thisWeek >= 3 ? "var(--accent)" : "var(--dim)";
+
+  renderSyncDot();
 
   if (state.tab === "today") renderToday(view);
   else if (state.tab === "progress") renderProgress(view);
@@ -718,8 +869,8 @@ function renderToday(view) {
     .join("");
 
   const cards = cfg.exercises.map(([name, sets, reps]) => {
-    const last = lastFor(state.rows, name);
-    const todayBest = bestOf(state.rows, name, today);
+    const last = lastFor(liveRows(), name);
+    const todayBest = bestOf(liveRows(), name, today);
 
     let meta = '<div class="meta">No history — start light and leave 2 reps in the tank</div>';
     if (last) {
@@ -781,12 +932,13 @@ function renderToday(view) {
 /* ---------- progress ---------- */
 
 function renderProgress(view) {
-  if (!state.rows.length) {
+  const live = liveRows();
+  if (!live.length) {
     view.innerHTML = `<div class="empty">Nothing logged yet.<br>Add your first set on the Today tab.</div>`;
     return;
   }
 
-  const rows = progressRows(state.rows);
+  const rows = progressRows(live);
   const body = rows.map((r) => `
     <tr>
       <td class="name">${esc(titleCase(r.exercise))}</td>
@@ -796,8 +948,8 @@ function renderProgress(view) {
       <td class="${r.cls}">${r.trend}</td>
     </tr>`).join("");
 
-  const first = state.rows.reduce((a, b) => (a.date <= b.date ? a : b));
-  const totalVolume = state.rows.reduce((sum, r) => sum + r.weight * r.reps * r.sets, 0);
+  const first = live.reduce((a, b) => (a.date <= b.date ? a : b));
+  const totalVolume = live.reduce((sum, r) => sum + r.weight * r.reps * r.sets, 0);
 
   view.innerHTML = `
     <h2>Estimated 1RM per lift</h2>
@@ -814,7 +966,7 @@ function renderProgress(view) {
     <h2>Totals</h2>
     <div class="card">
       <div class="row"><span class="note">Total volume moved</span><span class="exname">${fmt(totalVolume, 0)} kg</span></div>
-      <div class="row" style="margin-top:9px"><span class="note">Sessions logged</span><span class="exname">${new Set(state.rows.map((r) => r.date)).size}</span></div>
+      <div class="row" style="margin-top:9px"><span class="note">Sessions logged</span><span class="exname">${new Set(live.map((r) => r.date)).size}</span></div>
       <div class="row" style="margin-top:9px"><span class="note">Tracking since</span><span class="exname">${esc(first.date)}</span></div>
     </div>`;
 }
@@ -822,13 +974,14 @@ function renderProgress(view) {
 /* ---------- history ---------- */
 
 function renderHistory(view) {
-  if (!state.rows.length) {
+  const live = liveRows();
+  if (!live.length) {
     view.innerHTML = `<div class="empty">Nothing logged yet.</div>`;
     return;
   }
 
   const byDate = new Map();
-  for (const r of state.rows) {
+  for (const r of live) {
     if (!byDate.has(r.date)) byDate.set(r.date, []);
     byDate.get(r.date).push(r);
   }
@@ -837,11 +990,11 @@ function renderHistory(view) {
   view.innerHTML = days.map((date) => {
     const entries = byDate.get(date);
     const volume = entries.reduce((sum, r) => sum + r.weight * r.reps * r.sets, 0);
-    const items = entries.map((r, i) => `
+    const items = entries.map((r) => `
       <tr>
         <td class="name">${esc(titleCase(r.exercise))}</td>
         <td>${fmt(r.weight)} × ${r.reps} × ${r.sets}</td>
-        <td style="width:34px"><button class="del" data-act="del" data-date="${esc(date)}" data-i="${i}" aria-label="Delete">✕</button></td>
+        <td style="width:34px"><button class="del" data-act="del" data-id="${esc(r.id)}" aria-label="Delete">✕</button></td>
       </tr>`).join("");
 
     return `
@@ -855,15 +1008,78 @@ function renderHistory(view) {
 
 /* ---------- data ---------- */
 
+function syncSection() {
+  const cfg = Sync.config();
+  const st = Sync.state;
+
+  if (!st.configured) {
+    return `
+      <h2>Sync across devices</h2>
+      <div class="card">
+        <div class="note">
+          Optional. Paste the two values from your Supabase project — see <strong>DEPLOY.md</strong>.
+          Until then the app works fully offline and keeps your log on this device.
+        </div>
+        <div class="field text">
+          <span>Project URL</span>
+          <input type="text" id="sb-url" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="https://xxxx.supabase.co" value="${esc(cfg.url)}">
+        </div>
+        <div class="field text">
+          <span>Publishable key</span>
+          <input type="text" id="sb-key" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="sb_publishable_… or eyJ…" value="${esc(cfg.key)}">
+        </div>
+        <button class="btn wide" data-act="sb-save" style="margin-top:12px">Save &amp; connect</button>
+      </div>`;
+  }
+
+  if (!st.signedIn) {
+    return `
+      <h2>Sync across devices</h2>
+      <div class="card">
+        <div class="note">Connected to <code>${esc(cfg.url.replace(/^https?:\/\//, ""))}</code>. Sign in to start syncing.</div>
+        <div class="field text">
+          <span>Email</span>
+          <input type="text" id="sb-email" inputmode="email" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="you@example.com">
+        </div>
+        <button class="btn wide" data-act="sb-signin" style="margin-top:12px">Email me a sign-in link</button>
+        <button class="btn wide" data-act="sb-test">Test connection</button>
+        <button class="btn wide danger" data-act="sb-forget">Use a different project</button>
+        ${st.error ? `<div class="note" style="margin-top:6px">⚠︎ ${esc(st.error)}</div>` : ""}
+      </div>`;
+  }
+
+  const last = st.lastSyncedAt ? esc(agoLabel(st.lastSyncedAt.slice(0, 10))) : "never";
+  const status = st.error
+    ? `<span class="down">error</span>`
+    : st.pending
+      ? `<span style="color:#fbbf24">changes pending</span>`
+      : `<span class="up">up to date</span>`;
+
+  return `
+    <h2>Sync across devices</h2>
+    <div class="card">
+      <div class="row"><span class="note">Signed in</span><span class="exname">${esc(st.email || "")}</span></div>
+      <div class="row" style="margin-top:9px"><span class="note">Last synced</span><span class="exname">${last}</span></div>
+      <div class="row" style="margin-top:9px"><span class="note">Status</span><span class="exname">${status}</span></div>
+      ${st.error ? `<div class="note" style="margin-top:10px">⚠︎ ${esc(st.error)}</div>` : ""}
+      <button class="btn wide" data-act="sb-sync" style="margin-top:12px">Sync now</button>
+      <button class="btn wide" data-act="sb-test">Test connection</button>
+      <button class="btn wide" data-act="sb-signout">Sign out on this device</button>
+      <div class="note" style="margin-top:8px">Signing out leaves your local log untouched.</div>
+    </div>`;
+}
+
 function renderData(view) {
-  const count = state.rows.length;
+  const live = liveRows();
   view.innerHTML = `
+    ${syncSection()}
+
     <h2>Your data</h2>
     <div class="card">
-      <div class="row"><span class="note">Entries stored on this device</span><span class="exname">${count}</span></div>
+      <div class="row"><span class="note">Entries stored on this device</span><span class="exname">${live.length}</span></div>
       <div class="note" style="margin-top:10px">
-        Kept in this browser's local storage. It survives closing the app, but
-        <strong>clearing Safari/Chrome site data wipes it</strong> — export to CSV every week or two.
+        Local storage is the source of truth, so the app works with no signal.
+        <strong>Clearing Safari/Chrome site data wipes it</strong> — syncing or exporting is what makes it recoverable.
       </div>
     </div>
 
@@ -879,7 +1095,10 @@ function renderData(view) {
     </div>
 
     <h2>Danger zone</h2>
-    <button class="btn wide danger" data-act="clear">Delete all entries on this device</button>
+    <button class="btn wide danger" data-act="clear">Delete all entries</button>
+    <div class="note" style="margin-top:4px">
+      Deletes are synced, so this clears your log on every signed-in device.
+    </div>
   `;
 }
 
@@ -897,11 +1116,21 @@ function logFrom(card) {
   if (!(reps > 0)) { toast("Enter reps"); return; }
   if (!(sets > 0)) { toast("Enter sets"); return; }
 
-  const entry = { date: todayISO(), exercise, weight, reps, sets, notes: "" };
+  const entry = {
+    id: uuid(),
+    date: todayISO(),
+    exercise,
+    weight,
+    reps,
+    sets,
+    notes: "",
+    deleted: false,
+    updatedAt: new Date().toISOString(),
+  };
 
   // Sets are logged as a count, so an identical entry on the same day is far
   // more likely a double-tap than a genuine second set. Confirm before adding.
-  const twin = state.rows.find(
+  const twin = liveRows().find(
     (r) =>
       r.date === entry.date &&
       r.exercise === entry.exercise &&
@@ -916,10 +1145,11 @@ function logFrom(card) {
     return;
   }
 
-  const previousBest = bestOf(state.rows, exercise);
+  const previousBest = bestOf(liveRows(), exercise);
 
   state.rows.push(entry);
   if (!saveLog(state.rows)) return;
+  Sync.markDirty();
 
   const label = `${fmt(weight)} kg × ${reps} × ${sets}`;
   let message;
@@ -935,18 +1165,21 @@ function logFrom(card) {
     fn: () => {
       const at = state.rows.indexOf(entry);
       if (at < 0) return;
-      state.rows.splice(at, 1);
+      tombstone(entry);
       saveLog(state.rows);
+      Sync.markDirty();
+      scheduleSync();
       render();
       toast("Entry removed");
     },
   });
 
   if (!timerHandle) startRest(restSeconds);
+  scheduleSync();
   render();
 }
 
-function handleAction(act, el) {
+async function handleAction(act, el) {
   const card = el.closest("[data-ex]");
 
   switch (act) {
@@ -975,17 +1208,13 @@ function handleAction(act, el) {
       break;
 
     case "del": {
-      // History rows are re-derived from state, so translate (date, offset) back
-      // into an index in the flat array before splicing.
-      const date = el.dataset.date;
-      const offset = parseInt(el.dataset.i, 10);
-      const indices = state.rows.map((r, i) => (r.date === date ? i : -1)).filter((i) => i >= 0);
-      const target = indices[offset];
-      if (target == null) return;
-      const removed = state.rows[target];
-      if (!confirmAction(`Delete ${titleCase(removed.exercise)} ${fmt(removed.weight)} kg × ${removed.reps} × ${removed.sets}?`)) return;
-      state.rows.splice(target, 1);
+      const target = state.rows.find((r) => r.id === el.dataset.id);
+      if (!target || target.deleted) return;
+      if (!confirmAction(`Delete ${titleCase(target.exercise)} ${fmt(target.weight)} kg × ${target.reps} × ${target.sets}?`)) return;
+      tombstone(target);
       saveLog(state.rows);
+      Sync.markDirty();
+      scheduleSync();
       toast("Deleted");
       render();
       break;
@@ -1027,12 +1256,67 @@ function handleAction(act, el) {
       $("#file").click();
       break;
 
-    case "clear":
-      if (!state.rows.length) { toast("Nothing to delete"); return; }
-      if (!confirmAction(`Delete all ${state.rows.length} entries on this device? Export first if you haven't.`)) return;
-      state.rows = [];
+    case "clear": {
+      if (!liveRows().length) { toast("Nothing to delete"); return; }
+      if (!confirmAction("Delete every entry on every signed-in device? Export first if you haven't.")) return;
+      for (const row of state.rows) if (!row.deleted) tombstone(row);
       saveLog(state.rows);
+      Sync.markDirty();
+      scheduleSync();
       toast("All entries deleted");
+      render();
+      break;
+    }
+
+    case "sb-save": {
+      const url = ($("#sb-url").value || "").trim();
+      const key = ($("#sb-key").value || "").trim();
+      if (!/^https?:\/\//.test(url)) { toast("Project URL should start with https://"); return; }
+      if (!key) { toast("Paste the publishable key"); return; }
+      Sync.saveConfig(url, key);
+      toast("Saved — now sign in");
+      render();
+      break;
+    }
+
+    case "sb-signin": {
+      const email = ($("#sb-email").value || "").trim();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { toast("Enter a valid email address"); return; }
+      toast("Sending…");
+      try {
+        await Sync.signIn(email);
+        toast("Check your email for the sign-in link");
+      } catch {
+        toast(Sync.state.error || "Could not send the link");
+      }
+      render();
+      break;
+    }
+
+    case "sb-sync":
+      toast("Syncing…");
+      await runSync(true);
+      break;
+
+    case "sb-test": {
+      toast("Testing…");
+      const res = await Sync.testConnection();
+      toast(res.ok ? "Connection OK" : "Failed — " + res.error);
+      render();
+      break;
+    }
+
+    case "sb-signout":
+      if (!confirmAction("Sign out on this device? Your local log stays here.")) return;
+      await Sync.signOut();
+      toast("Signed out");
+      render();
+      break;
+
+    case "sb-forget":
+      if (!confirmAction("Remove the Supabase URL and key from this device?")) return;
+      Sync.saveConfig("", "");
+      toast("Cleared");
       render();
       break;
   }
@@ -1049,10 +1333,12 @@ async function importFile(file) {
 
   const key = (r) => `${r.date}|${r.exercise}|${r.weight}|${r.reps}|${r.sets}|${r.notes}`;
   const seen = new Set(state.rows.map(key));
-  const fresh = rows.filter((r) => !seen.has(key(r)));
+  const fresh = rows.filter((r) => !seen.has(key(r))).map(migrate);
 
   state.rows = state.rows.concat(fresh);
   saveLog(state.rows);
+  Sync.markDirty();
+  scheduleSync();
 
   const parts = [`Imported ${fresh.length} new`];
   if (rows.length - fresh.length) parts.push(`${rows.length - fresh.length} duplicates skipped`);
@@ -1112,6 +1398,9 @@ if ("serviceWorker" in navigator && (location.protocol === "https:" || location.
 }
 
 render();
+
+// Safety net for a session that was already stored before this script ran.
+if (Sync.state.configured && Sync.state.signedIn) scheduleSync(1000);
 </script>
 </body>
 </html>

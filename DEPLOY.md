@@ -72,6 +72,84 @@ You now get a real app icon, no browser chrome, and it works with no signal.
   recover if you ever clear Safari's website data.
 - Rest timer starts itself on your first log of the session.
 
+## Optional: your log on every device
+
+Hosting puts the *app* on every device. It does not put your *data* there — entries
+live in the browser that created them, so your phone and laptop would otherwise be
+two separate logs. This part fixes that, and it's free.
+
+The app stays offline-first: logging never waits on the network, so a basement gym
+with no signal works exactly like being at home. It reconciles with the database
+whenever it next has a connection.
+
+### 1. Create a Supabase project
+
+Sign up at <https://supabase.com>, create a project (any name, nearest region) and
+wait for it to finish provisioning. Free tier is plenty — your log will be a few
+hundred rows a year.
+
+### 2. Create the table
+
+Project → **SQL Editor** → New query → paste the whole of
+[`supabase/schema.sql`](supabase/schema.sql) → **Run**.
+
+That creates the table, an index, and row-level security policies. Every policy is
+scoped to `auth.uid() = user_id`, so a signed-in user can only ever read or write
+their own rows. The `anon` role is granted nothing at all — without this, the
+publishable key in a public web page would expose your whole log.
+
+### 3. Allow your URL to receive the sign-in link
+
+**This is the step that silently breaks if you skip it.** Authentication →
+**URL Configuration**:
+
+- **Site URL**: `https://<your-username>.github.io/Workouts/app/`
+- **Redirect URLs**: add both
+  - `https://<your-username>.github.io/Workouts/app/`
+  - `http://localhost:8765/` (so you can test on your Mac)
+
+Supabase only redirects to URLs on this list. If it's missing, the magic link dumps
+you on the project's default Site URL and nothing happens.
+
+### 4. Connect the app
+
+Project → **Settings → API Keys**. Copy:
+
+- **Project URL** — looks like `https://abcdefgh.supabase.co`
+- **Publishable key** — `sb_publishable_…` (older projects: the `anon` key, `eyJ…`)
+
+In the app: **Data → Sync across devices**, paste both, tap **Save & connect**.
+Then tap **Test connection** — you want "Connection OK".
+
+### 5. Sign in
+
+Enter your email, tap **Email me a sign-in link**, and open the link **on the device
+you're setting up**. Repeat step 4–5 on every device and they all share one log.
+
+The header shows a small dot: green when synced, amber when changes are waiting,
+red on an error. Tap through to **Data** for the detail.
+
+### Troubleshooting
+
+| Symptom | Cause |
+|---|---|
+| "Test connection" fails, `relation does not exist` | The table isn't exposed to the API. Check Settings → Data API → Exposed tables, and re-run the SQL. |
+| `permission denied for table entries` | The `grant` statements didn't run. Re-run `supabase/schema.sql`. |
+| Sign-in email never arrives | Supabase's built-in sender is rate-limited (a few per hour) and won't deliver to some domains. Wait, or configure your own SMTP under Authentication → Emails. |
+| Magic link does nothing | The redirect URL isn't on the allowlist — see step 3. |
+| Two devices disagree | Last-write-wins per entry by timestamp, so they settle on the newest edit. Clock skew between devices decides close calls. |
+| Project stopped responding after a week away | Free projects pause after 7 days of inactivity. Open the dashboard and restore it; no data is lost. |
+
+### What sync does *not* do
+
+- It is **not a backup**. Keep exporting CSV now and then; a cloud table you can
+  accidentally wipe is not a backup either.
+- Deletions propagate, and there is no undo across devices. The Undo button in the
+  toast covers the immediate mistake only.
+- `tracker/track.py` still reads a local CSV. Sync doesn't change that — export and
+  drop the file into `tracker/` as before.
+
+
 ## Updating the app
 
 ```bash

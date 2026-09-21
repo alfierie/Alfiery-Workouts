@@ -6,6 +6,9 @@ A 3-day upper-body plan, plus two ways to log it that share the same data format
 |---|---|
 | `workout-plan.md` | The Monday / Wednesday / Friday–Saturday program |
 | `app/` | Phone web app — tap-to-log, works offline, installs to your home screen |
+| `app/sync.js` | Optional cross-device sync. Local storage stays the source of truth. |
+| `app/vendor/supabase.js` | Vendored Supabase client (MIT, v2.116.0) so sync works offline |
+| `supabase/schema.sql` | Table + row-level security policies, run once in the Supabase SQL editor |
 | `tracker/track.py` | Terminal tracker — `log`, `progress`, `history`, `summary`, `undo` |
 | `tracker/log.csv` | Terminal data file (plain CSV, git-ignored) |
 | `DEPLOY.md` | How to get the app onto your phone (GitHub Pages, ~5 min) |
@@ -20,9 +23,19 @@ Open the app's URL, then **Share → Add to Home Screen** (iOS Safari) or
   2.5 kg and **Log**. An **Undo** appears in case you fat-finger it.
 - **Progress** — estimated 1RM per lift with a trend arrow (↑ ↓ →).
 - **History** — every session, with delete.
-- **Data** — export / import CSV, and a warning before you delete anything.
+- **Data** — sync setup, export / import CSV, and a warning before you delete anything.
 
 Rest timer starts itself on your first log of the session.
+
+## One log, several devices
+
+By default the log is local to the browser that created it. To share it — and back
+it up — connect a free Supabase project: follow **`DEPLOY.md`**, then paste two
+values into **Data → Sync across devices**.
+
+It stays offline-first either way. Logging never waits on the network, and changes
+reconcile when there is one. Deletions are tombstoned rather than removed, so
+deleting on your phone also removes it on your laptop.
 
 ## In the terminal
 
